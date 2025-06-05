@@ -1,0 +1,39 @@
+# Environnement virtuel
+venv/
+ENV/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.so
+
+# Fichiers de logs / sorties temporaires
+*.log
+*.out
+*.tmp
+*.bak
+*.swp
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Fichiers JSON sensibles
+*.json
+
+# Fichiers spécifiques à Streamlit
+.streamlit/config.toml
+.streamlit/credentials.toml
+
+# Jupyter notebooks et extensions
+.ipynb_checkpoints/
+*.ipynb
+
+# Dossiers de test éventuels
+tests/
+
+# VS Code / IDE
+.vscode/
+.idea/
