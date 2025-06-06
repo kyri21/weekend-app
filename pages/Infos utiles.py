@@ -3,22 +3,21 @@ from utils.firebase import db
 from datetime import datetime
 
 st.set_page_config(page_title="Infos utiles", layout="centered")
-st.title("🧾 Infos importantes (logins, numéros, etc.)")
+st.title("ℹ️ Infos utiles du groupe")
 
 @st.cache_data(ttl=600)
 def load_infos():
     doc = db.collection("infos").document("shared").get()
-    return doc.to_dict() if doc.exists else {}
+    return doc.to_dict().get("contenu", "") if doc.exists else ""
 
-data = load_infos()
-default_text = data.get("contenu", "")
+contenu = load_infos()
 
-st.text_area("📝 Notes importantes", value=default_text, height=300, key="infos_text")
+st.text_area("📝 Notes importantes (Login, RIB…)", value=contenu, height=300, key="infos_text")
 
-if st.button("✅ Enregistrer les modifications"):
+if st.button("💾 Enregistrer les modifications"):
     db.collection("infos").document("shared").set({
         "contenu": st.session_state["infos_text"],
         "modifié_le": datetime.now().isoformat()
     })
-    st.success("Infos mises à jour avec succès ✅")
+    st.success("Infos mises à jour ✅")
     st.cache_data.clear()
