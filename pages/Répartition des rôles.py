@@ -7,11 +7,10 @@ st.title("🧑‍🤝‍🧑 Répartition des rôles annuels")
 
 participants = ["Aiham", "Arthur", "Pierre", "Guillaume", "François", "Nicolas", "Hendrik", "Olivier"]
 roles = ["Courses", "Logement", "Goodies", "Activités"]
-
 current_year = datetime.now().year
-year = st.selectbox("📆 Année", list(range(current_year, current_year - 10, -1)), index=0)
+year = st.selectbox("📆 Année", list(range(current_year, current_year - 11, -1)), index=0)
 
-st.subheader("✍️ Attribuer les rôles")
+st.subheader("✍️ Attribuer les rôles pour l'année")
 with st.form("repartition_form"):
     selections = {}
     for role in roles:
@@ -23,10 +22,9 @@ with st.form("repartition_form"):
     submitted = st.form_submit_button("✅ Valider cette répartition")
     if submitted:
         db.collection("repartitions").document(str(year)).set(selections)
-        st.success("Répartition enregistrée avec succès ✅")
+        st.success("Répartition enregistrée ✅")
         st.cache_data.clear()
 
-# Affichage historique
 st.divider()
 st.subheader("📚 Historique des répartitions")
 
@@ -47,7 +45,7 @@ if filtre_mode == "Par année":
     if selected_year in repartitions:
         st.write(f"### 📅 Répartition {selected_year}")
         for role, (p1, p2) in repartitions[selected_year].items():
-            st.write(f"**{role}** : {p1} et {p2}")
+            st.write(f"- **{role}** : {p1} & {p2}")
 
 else:  # Par personne
     selected_person = st.selectbox("👤 Choisir une personne :", participants)
