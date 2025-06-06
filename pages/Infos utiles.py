@@ -1,29 +1,26 @@
 import streamlit as st
+from utils.firebase import db
 
 st.set_page_config(page_title="Infos utiles", layout="centered")
-st.title("🧾 Infos Utiles")
+st.title("ℹ️ Infos utiles")
 
-st.subheader("🛒 Leclerc Drive")
-st.code("Identifiant : kyriazis@outlook.fr\nMot de passe : Waf1991x8!", language="text")
+st.markdown("Note : ces infos sont visibles par tout le groupe. Ne pas inclure d’informations personnelles sensibles.")
 
-st.subheader("🏦 RIB Association SUMERIA")
-st.code("IBAN : FR7617598000010000671413458\nBIC : LYDIFRP2XXX", language="text")
+@st.cache_data(ttl=600)
+def get_infos():
+    doc = db.collection("infos").document("partage").get()
+    if doc.exists:
+        return doc.to_dict().get("contenu", "")
+    return ""
 
-# ✅ Protection par question secrète
-if "carte_visible" not in st.session_state:
-    st.session_state["carte_visible"] = False
+def save_infos(text):
+    db.collection("infos").document("partage").set({"contenu": text})
+    st.success("Informations mises à jour avec succès ✅")
+    st.cache_data.clear()
 
-if not st.session_state["carte_visible"]:
-    with st.expander("🔐 Afficher les coordonnées de la carte de paiement"):
-        reponse = st.text_input("❓ Quel est le surnom de Peplum d'Andrik ?", type="password")
-        if reponse.lower().strip() == "commode":
-            st.session_state["carte_visible"] = True
-        elif reponse != "":
-            st.error("❌ Mauvaise réponse")
+contenu = get_infos()
 
-if st.session_state["carte_visible"]:
-    st.subheader("💳 Carte de paiement")
-    st.code("""Numéro : 4785 5430 2324 2672
-Expiration : 12/26
-CVV : 808
-Titulaire : Arthur KYRIAZIS""", language="text")
+st.text_area("📝 Bloc de texte partagé", value=contenu, height=400, key="infos_input")
+
+if st.button("💾 Enregistrer"):
+    save_infos(st.session_state["infos_input"])
