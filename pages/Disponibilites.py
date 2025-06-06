@@ -1,69 +1,53 @@
 import streamlit as st
+import calendar
 from datetime import datetime, timedelta
 from utils.firebase import db
 
 st.set_page_config(page_title="Disponibilités", layout="wide")
-st.title("📆 Disponibilités")
+st.title("📅 Disponibilités week-ends")
 
 participants = ["Aiham", "Arthur", "Pierre", "Guillaume", "François", "Nicolas", "Hendrik", "Olivier"]
 
-# Sélection utilisateur
-user = st.selectbox("Qui êtes-vous ?", participants)
+prenom = st.selectbox("👤 Qui êtes-vous ?", participants)
 
-# Génération années + mois
-current_year = datetime.today().year
-annee = st.selectbox("Choisir une année", list(range(current_year, current_year + 3)), index=0)
-mois = st.selectbox("Choisir un mois", list(range(1, 13)))
+col1, col2 = st.columns(2)
+with col1:
+    month = st.selectbox("📆 Mois :", list(calendar.month_name)[1:], index=datetime.now().month - 1)
+with col2:
+    year = st.selectbox("🗓️ Année :", list(range(datetime.now().year, datetime.now().year + 5)), index=0)
 
-# Fonction pour obtenir tous les week-ends du mois sélectionné
-@st.cache_data(ttl=600)
-def get_weekends(year, month):
+@st.cache_data(ttl=3600)
+def get_weekends(y, m):
     weekends = []
-    date = datetime(year, month, 1)
-    while date.month == month:
-        if date.weekday() == 5:  # samedi
-            samedi = date.date()
-            dimanche = (date + timedelta(days=1)).date()
-            if dimanche.month == month:
-                weekends.append((samedi, dimanche))
-        date += timedelta(days=1)
+    cal = calendar.Calendar(firstweekday=0)
+    for week in cal.monthdatescalendar(y, m):
+        saturday = week[5]
+        sunday = week[6]
+        if saturday.month == m and sunday.month == m:
+            weekends.append((saturday, sunday))
     return weekends
 
-weekends = get_weekends(annee, mois)
+weekends = get_weekends(year, list(calendar.month_name).index(month))
 
-# Récupérer les dispos existantes en cache
-@st.cache_data(ttl=600)
-def get_user_dispos(user):
-    docs = db.collection("disponibilites").where("user", "==", user).stream()
-    return [doc.to_dict().get("weekend") for doc in docs]
+doc_ref = db.collection("disponibilites").document(prenom)
+doc = doc_ref.get()
+data = doc.to_dict() if doc.exists else {}
 
-if "dispos" not in st.session_state:
-    st.session_state["dispos"] = get_user_dispos(user)
+dispos = data.get(f"{year}-{month}", [])
 
-# Affichage des week-ends
-st.subheader(f"Week-ends de {mois:02d}/{annee}")
-selected_weekends = []
+st.markdown("### ✅ Cochez vos week-ends disponibles")
 
-for samedi, dimanche in weekends:
-    label = f"{samedi.strftime('%d/%m')} - {dimanche.strftime('%d/%m')}"
-    checked = f"{samedi}_{dimanche}" in st.session_state["dispos"]
-    if st.checkbox(label, key=f"{samedi}_{dimanche}", value=checked):
-        selected_weekends.append(f"{samedi}_{dimanche}")
+with st.form("dispos_form"):
+    new_dispos = []
+    for samedi, dimanche in weekends:
+        label = f"🗓️ {samedi.strftime('%d/%m')} et {dimanche.strftime('%d/%m')}"
+        is_checked = label in dispos
+        if st.checkbox(label, value=is_checked, key=label):
+            new_dispos.append(label)
 
-# Bouton de validation
-if st.button("✅ Valider mes choix"):
-    # Supprimer les anciennes dispos de cet utilisateur
-    dispos_ref = db.collection("disponibilites").where("user", "==", user).stream()
-    for doc in dispos_ref:
-        db.collection("disponibilites").document(doc.id).delete()
-
-    # Enregistrer les nouvelles
-    for weekend in selected_weekends:
-        db.collection("disponibilites").add({
-            "user": user,
-            "weekend": weekend,
-            "timestamp": datetime.now()
-        })
-
-    st.success("Disponibilités mises à jour avec succès ✅")
-    st.cache_data.clear()
+    if st.form_submit_button("💾 Valider mes disponibilités"):
+        updated = data
+        updated[f"{year}-{month}"] = new_dispos
+        doc_ref.set(updated)
+        st.success("Vos disponibilités ont bien été enregistrées ✅")
+        st.cache_data.clear()
