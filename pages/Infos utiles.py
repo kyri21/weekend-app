@@ -18,9 +18,8 @@ if not st.session_state["carte_visible"]:
         reponse = st.text_input("❓ Quel est le surnom de Peplum d'Andrik ?", type="password")
         if reponse.lower().strip() == "commode":
             st.session_state["carte_visible"] = True
-        else:
-            if reponse != "":
-                st.error("❌ Mauvaise réponse")
+        elif reponse != "":
+            st.error("❌ Mauvaise réponse")
 
 if st.session_state["carte_visible"]:
     st.subheader("💳 Carte de paiement")
