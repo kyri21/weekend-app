@@ -1,61 +1,69 @@
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
 from datetime import datetime, timedelta
-import calendar
+from utils.firebase import db
 
-# Initialisation Firebase
-if not firebase_admin._apps:
-    cred = credentials.Certificate("firebase_key.json")
-    firebase_admin.initialize_app(cred)
-db = firestore.client()
+st.set_page_config(page_title="Disponibilités", layout="wide")
+st.title("📆 Disponibilités")
 
-st.title("📅 Disponibilités")
+participants = ["Aiham", "Arthur", "Pierre", "Guillaume", "François", "Nicolas", "Hendrik", "Olivier"]
 
-participants = [
-    "Aiham", "Arthur", "Pierre", "Guillaume", "François", "Nicolas", "Hendrik", "Olivier"
-]
+# Sélection utilisateur
+user = st.selectbox("Qui êtes-vous ?", participants)
 
-selected_name = st.selectbox("Qui êtes-vous ?", participants)
+# Génération années + mois
+current_year = datetime.today().year
+annee = st.selectbox("Choisir une année", list(range(current_year, current_year + 3)), index=0)
+mois = st.selectbox("Choisir un mois", list(range(1, 13)))
 
-# Sélection de l’année
-current_year = datetime.now().year
-years = list(range(current_year, current_year + 5))
-selected_year = st.selectbox("Année", years, index=0)
-
-# Sélection du mois
-months = list(calendar.month_name)[1:]
-selected_month_name = st.selectbox("Mois", months)
-selected_month = months.index(selected_month_name) + 1
-
-# Calcul des week-ends
+# Fonction pour obtenir tous les week-ends du mois sélectionné
+@st.cache_data(ttl=600)
 def get_weekends(year, month):
     weekends = []
-    for day in range(1, calendar.monthrange(year, month)[1] + 1):
-        date = datetime(year, month, day)
-        if date.weekday() == 5:  # Samedi
-            sunday = date + timedelta(days=1)
-            if sunday.month == month:
-                weekends.append((date.strftime("%d/%m/%Y"), sunday.strftime("%d/%m/%Y")))
+    date = datetime(year, month, 1)
+    while date.month == month:
+        if date.weekday() == 5:  # samedi
+            samedi = date.date()
+            dimanche = (date + timedelta(days=1)).date()
+            if dimanche.month == month:
+                weekends.append((samedi, dimanche))
+        date += timedelta(days=1)
     return weekends
 
-weekends = get_weekends(selected_year, selected_month)
+weekends = get_weekends(annee, mois)
 
-# Chargement des données existantes
-doc_ref = db.collection("disponibilites").document(selected_name)
-doc = doc_ref.get()
-dispos = doc.to_dict().get("dispos", []) if doc.exists else []
+# Récupérer les dispos existantes en cache
+@st.cache_data(ttl=600)
+def get_user_dispos(user):
+    docs = db.collection("disponibilites").where("user", "==", user).stream()
+    return [doc.to_dict().get("weekend") for doc in docs]
 
-# Affichage des cases à cocher
-st.write("Cochez les week-ends où vous êtes disponible :")
-new_dispos = []
+if "dispos" not in st.session_state:
+    st.session_state["dispos"] = get_user_dispos(user)
+
+# Affichage des week-ends
+st.subheader(f"Week-ends de {mois:02d}/{annee}")
+selected_weekends = []
+
 for samedi, dimanche in weekends:
-    label = f"{samedi} - {dimanche}"
-    checked = label in dispos
-    if st.checkbox(label, value=checked):
-        new_dispos.append(label)
+    label = f"{samedi.strftime('%d/%m')} - {dimanche.strftime('%d/%m')}"
+    checked = f"{samedi}_{dimanche}" in st.session_state["dispos"]
+    if st.checkbox(label, key=f"{samedi}_{dimanche}", value=checked):
+        selected_weekends.append(f"{samedi}_{dimanche}")
 
-# Sauvegarde
+# Bouton de validation
 if st.button("✅ Valider mes choix"):
-    doc_ref.set({"dispos": new_dispos})
-    st.success("Disponibilités enregistrées !")
+    # Supprimer les anciennes dispos de cet utilisateur
+    dispos_ref = db.collection("disponibilites").where("user", "==", user).stream()
+    for doc in dispos_ref:
+        db.collection("disponibilites").document(doc.id).delete()
+
+    # Enregistrer les nouvelles
+    for weekend in selected_weekends:
+        db.collection("disponibilites").add({
+            "user": user,
+            "weekend": weekend,
+            "timestamp": datetime.now()
+        })
+
+    st.success("Disponibilités mises à jour avec succès ✅")
+    st.cache_data.clear()
