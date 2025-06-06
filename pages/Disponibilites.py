@@ -1,95 +1,61 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
-import datetime
+from datetime import datetime, timedelta
 import calendar
 
-# Initialisation Firebase (une seule fois)
-if "firebase_initialized" not in st.session_state:
+# Initialisation Firebase
+if not firebase_admin._apps:
     cred = credentials.Certificate("firebase_key.json")
-    if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
-    st.session_state.firebase_initialized = True
-
 db = firestore.client()
 
-# Membres du groupe
-membres = ["Aiham", "Arthur", "Pierre", "Guillaume", "François", "Nicolas", "Hendrik", "Olivier"]
-mois_noms = {
-    1: "Janvier", 2: "Février", 3: "Mars", 4: "Avril",
-    5: "Mai", 6: "Juin", 7: "Juillet", 8: "Août",
-    9: "Septembre", 10: "Octobre", 11: "Novembre", 12: "Décembre"
-}
+st.title("📅 Disponibilités")
 
-st.title("📅 Disponibilités des week-ends")
+participants = [
+    "Aiham", "Arthur", "Pierre", "Guillaume", "François", "Nicolas", "Hendrik", "Olivier"
+]
 
-# Sélection du prénom
-prenom = st.selectbox("Je suis :", membres)
+selected_name = st.selectbox("Qui êtes-vous ?", participants)
 
-# Sélection de l'année et du mois
-annee_selectionnee = st.selectbox("Choisis une année :", list(range(2025, 2031)))
-mois_selectionne = st.selectbox("Choisis un mois :", list(mois_noms.values()))
-mois_num = [k for k, v in mois_noms.items() if v == mois_selectionne][0]
+# Sélection de l’année
+current_year = datetime.now().year
+years = list(range(current_year, current_year + 5))
+selected_year = st.selectbox("Année", years, index=0)
 
-# Récupération des dispos déjà enregistrées
-doc_ref = db.collection("disponibilites").document(prenom)
-doc = doc_ref.get()
-dispo_existantes = doc.to_dict()["dates"] if doc.exists else []
+# Sélection du mois
+months = list(calendar.month_name)[1:]
+selected_month_name = st.selectbox("Mois", months)
+selected_month = months.index(selected_month_name) + 1
 
-# Fonction : week-ends d’une année donnée
-@st.cache_data
-def get_weekends(year):
+# Calcul des week-ends
+def get_weekends(year, month):
     weekends = []
-    date = datetime.date(year, 1, 1)
-    end = datetime.date(year, 12, 31)
-    while date <= end:
-        if date.weekday() == 5:  # samedi
-            dimanche = date + datetime.timedelta(days=1)
-            weekends.append((date, dimanche))
-        date += datetime.timedelta(days=1)
+    for day in range(1, calendar.monthrange(year, month)[1] + 1):
+        date = datetime(year, month, day)
+        if date.weekday() == 5:  # Samedi
+            sunday = date + timedelta(days=1)
+            if sunday.month == month:
+                weekends.append((date.strftime("%d/%m/%Y"), sunday.strftime("%d/%m/%Y")))
     return weekends
 
-weekends = get_weekends(annee_selectionnee)
-weekends_du_mois = [(s, d) for (s, d) in weekends if s.month == mois_num]
+weekends = get_weekends(selected_year, selected_month)
 
-# Interface de sélection
-st.markdown("### ✅ Coche les week-ends où tu es disponible :")
-dates_cochees = []
+# Chargement des données existantes
+doc_ref = db.collection("disponibilites").document(selected_name)
+doc = doc_ref.get()
+dispos = doc.to_dict().get("dispos", []) if doc.exists else []
 
-for samedi, dimanche in weekends_du_mois:
-    date_id = f"{samedi.isoformat()}_{dimanche.isoformat()}"
-    label = f"{samedi.strftime('%d %b %Y')} - {dimanche.strftime('%d %b %Y')}"
-    checked = date_id in dispo_existantes
-    if st.checkbox(label, value=checked, key=date_id):
-        dates_cochees.append(date_id)
+# Affichage des cases à cocher
+st.write("Cochez les week-ends où vous êtes disponible :")
+new_dispos = []
+for samedi, dimanche in weekends:
+    label = f"{samedi} - {dimanche}"
+    checked = label in dispos
+    if st.checkbox(label, value=checked):
+        new_dispos.append(label)
 
-# Valider
+# Sauvegarde
 if st.button("✅ Valider mes choix"):
-    nouvelles = set(dates_cochees)
-    anciennes = set(dispo_existantes)
-    toutes = list(nouvelles.union(anciennes))
-    doc_ref.set({"dates": toutes})
-    st.success("✔️ Disponibilités mises à jour avec succès !")
-
-# Affichage des week-ends communs
-st.markdown("---")
-st.markdown("### 🟢 Week-ends disponibles pour tout le monde :")
-
-all_dispos = db.collection("disponibilites").stream()
-dispos_dict = {}
-for d in all_dispos:
-    data = d.to_dict()
-    dispos_dict[d.id] = set(data.get("dates", []))
-
-if len(dispos_dict) == len(membres):
-    communs = set.intersection(*dispos_dict.values())
-    if communs:
-        for d in sorted(communs):
-            samedi, dimanche = d.split("_")
-            s = datetime.date.fromisoformat(samedi)
-            d = datetime.date.fromisoformat(dimanche)
-            st.markdown(f"- **{s.strftime('%d %b %Y')} - {d.strftime('%d %b %Y')}**")
-    else:
-        st.warning("❌ Aucun week-end commun pour l’instant.")
-else:
-    st.info("🕐 En attente que tout le monde ait rempli ses dispos.")
+    doc_ref.set({"dispos": new_dispos})
+    st.success("Disponibilités enregistrées !")
