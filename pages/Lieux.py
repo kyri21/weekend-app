@@ -2,84 +2,49 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 import urllib.parse
-from geopy.geocoders import Nominatim
 import folium
 from streamlit_folium import st_folium
 
-# Initialisation Firebase
-if "firebase_initialized" not in st.session_state:
+# Init Firebase
+if not firebase_admin._apps:
     cred = credentials.Certificate("firebase_key.json")
-    if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
-    st.session_state.firebase_initialized = True
-
 db = firestore.client()
-geolocator = Nominatim(user_agent="weekend-app")
+
 st.title("📍 Lieux")
 
-# Référence Firestore
-lieux_ref = db.collection("lieux")
-docs = lieux_ref.stream()
-lieux = [{"id": doc.id, **doc.to_dict()} for doc in docs]
+col1, col2 = st.columns(2)
+with col1:
+    nom = st.text_input("Nom du lieu")
+with col2:
+    adresse = st.text_input("Adresse (rue, ville...)")
 
-# ---- Formulaire d’ajout ----
-st.subheader("➕ Ajouter un lieu")
+# Enregistrement
+if st.button("Ajouter le lieu") and nom and adresse:
+    db.collection("lieux").add({"nom": nom, "adresse": adresse})
+    st.success("Lieu ajouté !")
 
-with st.form("ajout_lieu"):
-    adresse = st.text_input("🏠 Adresse complète")
-    nom = st.text_input("📝 Nom ou description (optionnel)")
-    submit = st.form_submit_button("✅ Ajouter")
+# Affichage des lieux
+docs = db.collection("lieux").stream()
+lieux = [{"id": d.id, **d.to_dict()} for d in docs]
 
-    if submit and adresse.strip():
-        lieux_ref.add({"adresse": adresse.strip(), "nom": nom.strip()})
-        st.success("✔️ Lieu ajouté avec succès !")
-        st.rerun()
+for lieu in lieux:
+    st.markdown(f"### {lieu['nom']}")
+    encoded_address = urllib.parse.quote_plus(lieu['adresse'])
+    st.write(f"📍 {lieu['adresse']}")
+    st.markdown(f"[🗺️ Google Maps](https://www.google.com/maps/search/?api=1&query={encoded_address})")
+    st.markdown(f"[🍏 Apple Maps](http://maps.apple.com/?q={encoded_address})")
+    st.markdown(f"[🚗 Waze](https://waze.com/ul?q={encoded_address})")
 
+    if st.button(f"🗑️ Supprimer {lieu['nom']}", key=lieu['id']):
+        db.collection("lieux").document(lieu['id']).delete()
+        st.success("Lieu supprimé.")
+        st.experimental_rerun()
 
-# ---- Carte interactive ----
+# Carte
 if lieux:
-    st.subheader("🗺️ Carte des lieux")
-
-    m = folium.Map(location=[46.5, 2.5], zoom_start=5)
-
+    st.subheader("🗺️ Carte interactive")
+    carte = folium.Map(location=[48.8566, 2.3522], zoom_start=5)
     for lieu in lieux:
-        try:
-            location = geolocator.geocode(lieu["adresse"])
-            if location:
-                folium.Marker(
-                    location=[location.latitude, location.longitude],
-                    popup=lieu.get("nom", lieu["adresse"]),
-                    tooltip=lieu.get("nom", lieu["adresse"])
-                ).add_to(m)
-        except Exception as e:
-            pass  # ignore errors
-
-    st_folium(m, width=700, height=400)
-
-# ---- Affichage des lieux enregistrés ----
-st.subheader("📌 Liste des lieux")
-
-if not lieux:
-    st.info("Aucun lieu enregistré pour le moment.")
-else:
-    for lieu in lieux:
-        adresse = lieu["adresse"]
-        nom = lieu.get("nom", "").strip()
-        enc_adresse = urllib.parse.quote_plus(adresse)
-
-        google_url = f"https://www.google.com/maps/search/?api=1&query={enc_adresse}"
-        apple_url = f"http://maps.apple.com/?daddr={enc_adresse}"
-        waze_url = f"https://waze.com/ul?ll=&q={enc_adresse}"
-
-        st.markdown(f"#### 📍 {nom if nom else adresse}")
-        if nom:
-            st.markdown(f"- **Adresse :** {adresse}")
-        st.markdown(f"[🗺️ Google Maps]({google_url}) | [🍎 Apple Maps]({apple_url}) | [🚗 Waze]({waze_url})")
-
-        # Bouton de suppression
-        if st.button(f"🗑️ Supprimer ce lieu", key=f"suppr_{lieu['id']}"):
-            lieux_ref.document(lieu["id"]).delete()
-            st.success(f"❌ Lieu supprimé : {nom or adresse}")
-            st.rerun()
-
-        st.markdown("---")
+        folium.Marker(location=None, popup=lieu["nom"]).add_to(carte)
+    st_folium(carte, width=700, height=400)
