@@ -1,49 +1,62 @@
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
+from datetime import datetime
+from utils.firebase import db
 
-# Firebase init
-if not firebase_admin._apps:
-    cred = credentials.Certificate("firebase_key.json")
-    firebase_admin.initialize_app(cred)
-db = firestore.client()
-
-st.title("👥 Répartition des rôles")
+st.set_page_config(page_title="Répartition des rôles", layout="centered")
+st.title("🧑‍🤝‍🧑 Répartition des rôles annuels")
 
 participants = ["Aiham", "Arthur", "Pierre", "Guillaume", "François", "Nicolas", "Hendrik", "Olivier"]
-departements = ["Courses", "Logement", "Goodies", "Activités"]
+roles = ["Courses", "Logement", "Goodies", "Activités"]
 
-annee = st.selectbox("Année", list(range(2023, 2031)))
+current_year = datetime.now().year
+year = st.selectbox("📆 Année", list(range(current_year, current_year - 10, -1)), index=0)
 
-st.subheader("📝 Affecter 2 personnes par département")
-repartition = {}
+st.subheader("✍️ Attribuer les rôles")
+with st.form("repartition_form"):
+    selections = {}
+    for role in roles:
+        col1, col2 = st.columns(2)
+        selections[role] = (
+            col1.selectbox(f"{role} - Membre 1", participants, key=f"{role}_1"),
+            col2.selectbox(f"{role} - Membre 2", participants, key=f"{role}_2")
+        )
+    submitted = st.form_submit_button("✅ Valider cette répartition")
+    if submitted:
+        db.collection("repartitions").document(str(year)).set(selections)
+        st.success("Répartition enregistrée avec succès ✅")
+        st.cache_data.clear()
 
-for dept in departements:
-    st.markdown(f"**{dept}**")
-    pers = st.multiselect(f"{dept} :", participants, key=dept, max_selections=2)
-    if pers:
-        repartition[dept] = pers
+# Affichage historique
+st.divider()
+st.subheader("📚 Historique des répartitions")
 
-if st.button("✅ Enregistrer"):
-    db.collection("repartition").document(str(annee)).set(repartition)
-    st.success("Répartition enregistrée !")
+filtre_mode = st.radio("🔍 Mode d’affichage", ["Par année", "Par personne"], horizontal=True)
 
-# Vue archive
-st.subheader("📚 Archive par année")
-annee_archive = st.selectbox("Choisir une année", list(range(2023, 2031)), key="archive")
-doc = db.collection("repartition").document(str(annee_archive)).get()
-if doc.exists:
-    data = doc.to_dict()
-    for dept, noms in data.items():
-        st.markdown(f"- **{dept}** : {', '.join(noms)}")
+@st.cache_data(ttl=600)
+def load_repartitions():
+    docs = db.collection("repartitions").stream()
+    all_data = {}
+    for doc in docs:
+        all_data[doc.id] = doc.to_dict()
+    return all_data
 
-# Vue par personne
-st.subheader("🔍 Historique par personne")
-nom_cherche = st.selectbox("Choisir une personne", participants, key="nom_archive")
-for a in range(2023, 2031):
-    doc = db.collection("repartition").document(str(a)).get()
-    if doc.exists:
-        data = doc.to_dict()
-        for dept, noms in data.items():
-            if nom_cherche in noms:
-                st.markdown(f"- **{a}** : {dept}")
+repartitions = load_repartitions()
+
+if filtre_mode == "Par année":
+    selected_year = st.selectbox("Choisir une année :", sorted(repartitions.keys(), reverse=True))
+    if selected_year in repartitions:
+        st.write(f"### 📅 Répartition {selected_year}")
+        for role, (p1, p2) in repartitions[selected_year].items():
+            st.write(f"**{role}** : {p1} et {p2}")
+
+else:  # Par personne
+    selected_person = st.selectbox("👤 Choisir une personne :", participants)
+    st.write(f"### 📌 Rôles de {selected_person}")
+    found = False
+    for y in sorted(repartitions.keys(), reverse=True):
+        for role, (p1, p2) in repartitions[y].items():
+            if selected_person in [p1, p2]:
+                st.write(f"📆 {y} : **{role}**")
+                found = True
+    if not found:
+        st.info("Aucun rôle trouvé pour cette personne.")
